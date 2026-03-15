@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import requests
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command, CommandStart
@@ -10,29 +11,59 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
+GIST_ID = os.getenv("GIST_ID")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GIST_FILENAME = "results.json"
+GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}" if GIST_ID else None
+
+def load_results():
+    if not GIST_ID or not GITHUB_TOKEN:
+        print("GIST_ID или GITHUB_TOKEN не настроены")
+        return {}
+    
+    try:
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        response = requests.get(GIST_API_URL, headers=headers)
+        
+        if response.status_code == 200:
+            gist_data = response.json()
+            file_content = gist_data["files"][GIST_FILENAME]["content"]
+            return json.loads(file_content)
+        else:
+            print(f"Ошибка загрузки из Gist: {response.status_code}")
+            return {}
+    except Exception as e:
+        print(f"Ошибка при загрузке: {e}")
+        return {}
+
+def save_results(data):
+    if not GIST_ID or not GITHUB_TOKEN:
+        print("GIST_ID или GITHUB_TOKEN не настроены")
+        return
+    
+    try:
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        update_data = {
+            "files": {
+                GIST_FILENAME: {
+                    "content": json.dumps(data, ensure_ascii=False, indent=4)
+                }
+            }
+        }
+        response = requests.patch(GIST_API_URL, headers=headers, json=update_data)
+        
+        if response.status_code == 200:
+            print("Данные успешно сохранены в Gist")
+        else:
+            print(f"Ошибка сохранения в Gist: {response.status_code}")
+    except Exception as e:
+        print(f"Ошибка при сохранении: {e}")
+
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
     raise ValueError("Токен бота не найден в переменных окружения!")
 
 ADMIN_IDS = [8167634087]
-
-file_path = "results.json"
-
-def load_results():
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
-
-def save_results(data):
-    try:
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"Ошибка сохранения: {e}")
 
 results = load_results()
 
@@ -162,6 +193,11 @@ async def admin_panel(message: Message):
 
 async def main():
     print("Бот запускается...")
+    if GIST_ID and GITHUB_TOKEN:
+        print(f"Данные будут сохраняться в GitHub Gist: {GIST_ID}")
+    else:
+        print("ВНИМАНИЕ: GitHub Gist не настроен! Данные не сохранятся!")
+    
     try:
         await dp.start_polling(bot)
     except Exception as e:
