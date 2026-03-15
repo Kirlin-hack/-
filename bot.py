@@ -10,18 +10,31 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
-TOKEN="8663768812:AAHexyE9Up9aNIhae0O0qT1DMOZZfzqz_O0"
+TOKEN = os.getenv("TOKEN")
+if not TOKEN:
+    raise ValueError("Токен бота не найден в переменных окружения!")
 
 ADMIN_IDS = [8167634087]
 
 file_path = "results.json"
 
-if not os.path.exists(file_path):
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump({}, f)
+def load_results():
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
 
-with open(file_path, "r", encoding="utf-8") as f:
-    results = json.load(f)
+def save_results(data):
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Ошибка сохранения: {e}")
+
+results = load_results()
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -64,24 +77,18 @@ class TestStates(StatesGroup):
 
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
-
     await state.update_data(score=0, q_index=0)
-
     await message.answer(
 "Привет! 👋\n\n"
 "Этот тест определит ваш уровень интернет безопасности.\n\n"
 "Ответьте на 15 вопросов."
 )
-
     await message.answer(questions[0], reply_markup=keyboard)
-
     await state.set_state(TestStates.question)
 
 @dp.message(TestStates.question)
 async def process_answer(message: Message, state: FSMContext):
-
     data = await state.get_data()
-
     q_index = data.get("q_index", 0)
     score = data.get("score", 0)
 
@@ -89,19 +96,13 @@ async def process_answer(message: Message, state: FSMContext):
         score += answers[message.text]
 
     q_index += 1
-
     await state.update_data(score=score, q_index=q_index)
 
     if q_index < len(questions):
-
         await message.answer(questions[q_index], reply_markup=keyboard)
-
     else:
-
         if score <= 15:
-
             level = "Низкий уровень безопасности"
-
             rec = (
 "• создавайте сложные уникальные пароли\n"
 "• включите двухфакторную аутентификацию\n"
@@ -109,77 +110,63 @@ async def process_answer(message: Message, state: FSMContext):
 "• не открывайте подозрительные ссылки\n"
 "• не используйте открытый Wi-Fi для важных данных"
 )
-
         elif score <= 24:
-
             level = "Средний уровень безопасности"
-
             rec = (
 "• усилите защиту аккаунтов\n"
 "• регулярно проверяйте настройки приватности\n"
 "• используйте антивирус\n"
 "• избегайте сомнительных ссылок"
 )
-
         else:
-
             level = "Высокий уровень безопасности"
-
             rec = (
 "• продолжайте соблюдать правила безопасности\n"
 "• регулярно обновляйте пароли\n"
 "• делитесь знаниями о безопасности с другими"
-)
+        )
 
         await message.answer(
 f"✅ Тест завершён\n\n"
 f"Ваш результат: {score}/30\n"
 f"Уровень: {level}\n\n"
 f"Рекомендации:\n{rec}"
-reply_markup=ReplyKeyboardRemove()
 )
 
-       
+        global results
         results[str(message.from_user.id)] = {
         "name": message.from_user.full_name,
         "score": score,
         "level": level
         }
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=4)
+        save_results(results)
 
         await state.clear()
 
 @dp.message(Command("admin"))
 async def admin_panel(message: Message):
-
     if message.from_user.id not in ADMIN_IDS:
-
         await message.answer("⛔ Доступ запрещён")
-
         return
 
-    if not results:
-
+    current_results = load_results()
+    if not current_results:
         await message.answer("Пока нет результатов")
-
         return
 
     text = "📊 Результаты пользователей:\n\n"
-
-    for user in results.values():
-
+    for user in current_results.values():
         text += f"{user['name']} — {user['score']}/30 — {user['level']}\n"
 
     await message.answer(text)
 
 async def main():
-
-    print("Бот запущен...")
-
-    await dp.start_polling(bot)
+    print("Бот запускается...")
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        print(f"Ошибка при запуске: {e}")
+        raise
 
 if __name__ == "__main__":
-
     asyncio.run(main())
